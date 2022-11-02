@@ -6,13 +6,14 @@ def parser():
         help='what behavior want to do: train | valid | test | visualize')
     parser.add_argument('--dataset', default='chexpert', help='use what dataset')
     parser.add_argument('--subsample', type=float, default=0)
-    parser.add_argument('--data_root', default='../CheXpert_Dataset/images_256/images/', 
+    parser.add_argument('--data_root', default='/lotterlab/datasets/',
         help='the directory to save the dataset')
     parser.add_argument('--log_root', default='log', 
         help='the directory to save the logs or other imformations (e.g. images)')
     parser.add_argument('--model_root', default='checkpoint', help='the directory to save the models')
     parser.add_argument('--load_checkpoint', default='./oldmodel/')
     parser.add_argument('--affix', default='default', help='the affix for the save folder')
+    parser.add_argument('--label_type', default='path')
 
     # parameters for generating adversarial examples
     parser.add_argument('--epsilon', '-e', type=float, default=0.005, 
@@ -34,7 +35,7 @@ def parser():
     parser.add_argument('--weight_decay', '-w', type=float, default=0, 
         help='the parameter of l2 restriction for weights')
 
-    parser.add_argument('--gpu', '-g', default='0', help='which gpu to use')
+    parser.add_argument('--gpu', '-g', default='0', help='which gpu to use', required=True)
     parser.add_argument('--n_eval_step', type=int, default=50, 
         help='number of iteration per one evaluation')
     parser.add_argument('--n_checkpoint_step', type=int, default=5000, 

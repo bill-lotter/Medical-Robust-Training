@@ -204,7 +204,7 @@ def main(args):
     print_args(args, logger)
 
     model = resnet50dsbn(pretrained=args.pretrain, widefactor=args.widefactor)
-    num_classes=8
+    num_classes = 8 if args.label_type == 'path' else 2
     model.fc = nn.Linear(model.fc.in_features, num_classes)
 
     attack = FastGradientSignUntargeted(model, 
@@ -222,35 +222,40 @@ def main(args):
     trainer = Trainer(args, logger, attack)
     if args.todo == 'train':
         transform_train = tv.transforms.Compose([
-                tv.transforms.Resize(256),
-                tv.transforms.ToTensor(),
-                tv.transforms.Lambda(lambda x: F.pad(x.unsqueeze(0),
-                                   (4*6,4*6,4*6,4*6), mode='constant', value=0).squeeze()),
-                tv.transforms.ToPILImage(),
-                tv.transforms.RandomHorizontalFlip(),
-                tv.transforms.ColorJitter(brightness=0.3, contrast=0.3, 
-                                            saturation=0.3, hue=0.3),
+                tv.transforms.Resize(224),
+                #tv.transforms.ToTensor(),
+                #tv.transforms.Lambda(lambda x: F.pad(x.unsqueeze(0),
+                #                   (4*6,4*6,4*6,4*6), mode='constant', value=0).squeeze()),
+                #tv.transforms.ToPILImage(),
+                #tv.transforms.RandomHorizontalFlip(),
+                #tv.transforms.ColorJitter(brightness=0.3, contrast=0.3,
+                #                            saturation=0.3, hue=0.3),
                 # tv.transforms.RandomRotation(25),
-                tv.transforms.RandomAffine(25, translate=(0.2, 0.2), 
-                                            scale=(0.8,1.2), 
-                                            shear=10),                            
-                tv.transforms.RandomCrop(256),
+                #tv.transforms.RandomAffine(25, translate=(0.2, 0.2),
+                #                            scale=(0.8,1.2),
+                #                            shear=10),
+                tv.transforms.RandomCrop(224),
                 tv.transforms.ToTensor(),
+                #tv.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
         tr_dataset = patd.PatchDataset(path_to_images=args.data_root,
                                         fold='train', 
                                         sample=args.subsample,
-                                        transform=transform_train)
+                                        transform=transform_train,
+                                        label_type=args.label_type)
         tr_loader = DataLoader(tr_dataset, batch_size=args.batch_size, shuffle=True, num_workers=12)
 
         # evaluation during training
         transform_test = tv.transforms.Compose([
-                tv.transforms.Resize(256),
-                tv.transforms.ToTensor()
+                tv.transforms.Resize(224),
+                tv.transforms.CenterCrop(224),
+                tv.transforms.ToTensor(),
+                #tv.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
                 ])
         va_dataset = patd.PatchDataset(path_to_images=args.data_root,
                                         fold='valid',
-                                        transform=transform_test)
+                                        transform=transform_test,
+                                        label_type=args.label_type)
         te_loader = DataLoader(va_dataset, batch_size=args.batch_size, shuffle=False, num_workers=12)
              
         trainer.train(model, tr_loader, te_loader, args.adv_train)
