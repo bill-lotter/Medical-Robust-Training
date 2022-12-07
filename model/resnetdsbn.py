@@ -1,4 +1,6 @@
 import math
+import pdb
+
 import torch.nn as nn
 import torch
 import torch.utils.model_zoo as model_zoo
@@ -10,6 +12,7 @@ from torch.nn.modules.utils import _ntuple
 from collections import OrderedDict
 import operator
 from itertools import islice
+import pdb
 
 _pair = _ntuple(2)
 
@@ -115,9 +118,16 @@ def resnet18dsbn(pretrained=False, **kwargs):
     """
     model = DSBNResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
     if pretrained:
-        updated_state_dict = _update_initial_weights_dsbn(model_zoo.load_url(model_urls['resnet18']),
-                                                          num_classes=model.num_classes,
-                                                          num_domains=model.num_domains)
+        if pretrained == 'imagenet':
+            updated_state_dict = _update_initial_weights_dsbn(model_zoo.load_url(model_urls['resnet18']),
+                                                              num_classes=model.num_classes,
+                                                              num_domains=model.num_domains)
+        else:
+            pdb.set_trace()
+            updated_state_dict = _update_initial_weights_dsbn(model_zoo.load_url(model_urls['resnet18']),
+                                                              num_classes=model.num_classes,
+                                                              num_domains=model.num_domains)
+        pdb.set_trace()
         model.load_state_dict(updated_state_dict, strict=False)
 
     return model
@@ -144,9 +154,18 @@ def resnet50dsbn(pretrained=False, **kwargs):
     """
     model = DSBNResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
     if pretrained:
-        updated_state_dict = _update_initial_weights_dsbn(model_zoo.load_url(model_urls['resnet50']),
-                                                          num_classes=model.num_classes,
-                                                          num_domains=model.num_domains)
+        if pretrained == 'imagenet':
+            updated_state_dict = _update_initial_weights_dsbn(model_zoo.load_url(model_urls['resnet50']),
+                                                              num_classes=model.num_classes,
+                                                              num_domains=model.num_domains)
+        else:  # is a path to checkpiont
+            updated_state_dict = torch.load(pretrained)
+            key_list = list(updated_state_dict.keys())
+            for key in key_list:
+                if 'fc' in key:
+                    print('pretrained {} are not used as initial params.'.format(key))
+                    del updated_state_dict[key]
+
         model.load_state_dict(updated_state_dict, strict=False)
 
     return model

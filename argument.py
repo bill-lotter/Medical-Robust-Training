@@ -25,8 +25,8 @@ def parser():
 
     parser.add_argument('--widefactor', type=int, default=1, 
         help='Factors for expanding the bottleneck layers of ResNet')
-    parser.add_argument('--pretrain', type=bool, default=False, 
-        help='Use ImageNet pretraining or not')
+    parser.add_argument('--pretrain',
+        help='Either imagenet or path to checkpoint')
 
     parser.add_argument('--batch_size', '-b', type=int, default=64, help='batch size')
     parser.add_argument('--max_epoch', '-m_e', type=int, default=300, 

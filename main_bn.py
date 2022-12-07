@@ -29,7 +29,8 @@ class Trainer():
         args = self.args
         logger = self.logger
         opt = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=args.weight_decay)
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[100, 200], gamma=0.1)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[10], gamma=0.1)
+        #scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[100, 200], gamma=0.1)
         # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', min_lr=1e-6)
         _iter = 0
         begin_time = time()
