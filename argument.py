@@ -44,6 +44,10 @@ def parser():
         help='number of iteration to save adversaries')
     parser.add_argument('--perturbation_type', '-p', choices=['linf', 'l2'], default='linf', 
         help='the type of the perturbation (linf or l2)')
+
+    parser.add_argument('--exclusive_labels', action='store_true')
+    parser.add_argument('--no_equal_sampling', action='store_true')
+    parser.add_argument('--no_filter_views', action='store_true')
     
     parser.add_argument('--adv_train', action='store_true')
 

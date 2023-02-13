@@ -1,3 +1,4 @@
+import pdb
 import sys
 import torchvision as tv
 from PIL import Image
@@ -9,6 +10,7 @@ from skimage.transform import resize
 import tqdm
 import pandas as pd
 import os
+import torch.nn.functional as F
 
 sys.path.insert(0, '../SVCEs_code/')
 
@@ -18,13 +20,17 @@ from model.resnetdsbn import resnet50dsbn
 
 
 class DBNWrapper(torch.nn.Module):
-    def __init__(self, orig_model, bn_index=0):
+    def __init__(self, orig_model, bn_index=0, add_softmax=False):
         super().__init__()
         self.orig_model = orig_model
         self.bn_index = bn_index
+        self.add_softmax = add_softmax
 
     def forward(self, x):
-        return self.orig_model.forward(x, [self.bn_index])
+        x = self.orig_model.forward(x, [self.bn_index])
+        if self.add_softmax:
+            x = F.softmax(x, dim=-1)
+        return x
 
 
 def load_resnetbn(check_path, n_classes=8):
@@ -37,9 +43,10 @@ def load_resnetbn(check_path, n_classes=8):
     return model
 
 
-def new_preprocess_image(image_path):
+def new_preprocess_image(image_path, convert_rgb=True):
     img = Image.open(image_path)
-    img = img.convert('RGB')
+    if convert_rgb:
+        img = img.convert('RGB')
     transform_test = tv.transforms.Compose([
         tv.transforms.Resize(224),
         tv.transforms.CenterCrop(224),
@@ -92,28 +99,47 @@ def plot_and_save_image(im, out_path, size=(4, 4), dpi=80):
 
 
 if __name__ == '__main__':
-    model_tag = 'chexpert_dsbn_res50_linf-01_norm-race_b64_pathpretrained'
-    checkpoint_tag = 'checkpoint_10000'
+    model_tag = 'chexpert_dsbn_res50_2race_bsz64_exclab_noclassbal_allviews'
+    checkpoint_tag = 'checkpoint_5000'
     #model_tag = 'chexpert_dsbn_res50_linf-01_norm-race'
     #checkpoint_tag = 'checkpoint_best'
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    n_files_per_class = 20 #50
+    n_files_per_class = 5 #50
+    add_softmax = False
+    eps = 25
 
     base_checkpoint_dir = '/lotterlab/lotterb/repos/Medical-Robust-Training/checkpoint/'
     checkpoint_path = os.path.join(base_checkpoint_dir, model_tag, checkpoint_tag + '.pth')
 
-    resnet = load_resnetbn(checkpoint_path, n_classes=2)
-    res_wrapper = DBNWrapper(resnet, bn_index=1)  # use adv bn_index
+    n_classes = 3 if '3race' in model_tag else 2
+    resnet = load_resnetbn(checkpoint_path, n_classes=n_classes)
+    res_wrapper = DBNWrapper(resnet, bn_index=1, add_softmax=add_softmax)  # use adv bn_index
 
-    data_dir = '/lotterlab/lotterb/repos/pytorch-CycleGAN-and-pix2pix/datasets/chexpert_race_v0/'
+    base_data_dir = '/lotterlab/datasets/'
+    val_df = pd.read_csv('../../project_data/bias_interpretability/cxp_cv_splits/version_0/val.csv')
     files_to_predict = {}
-    for label in ['testA', 'testB']:
-        all_files = os.listdir(os.path.join(data_dir, label))
-        files_to_predict[label] = [os.path.join(data_dir, label, f) for f in
-                                   np.random.permutation(all_files)[:n_files_per_class]]
+    if '2race' in model_tag:
+        r_tags = ['Black', 'White']
+    else:
+        r_tags = ['Asian', 'Black', 'White']
+    for l in r_tags:
+        fnames = val_df[val_df.Mapped_Race == l]['Path'].values
+        fnames = np.random.permutation(fnames)[:n_files_per_class]
+        files_to_predict[l] = [base_data_dir + f for f in fnames]
+
+    # data_dir = '/lotterlab/lotterb/repos/pytorch-CycleGAN-and-pix2pix/datasets/chexpert_race_v0/'
+    # files_to_predict = {}
+    # for label in ['testA', 'testB']:
+    #     all_files = os.listdir(os.path.join(data_dir, label))
+    #     files_to_predict[label] = [os.path.join(data_dir, label, f) for f in
+    #                                np.random.permutation(all_files)[:n_files_per_class]]
 
     base_out_dir = '/lotterlab/lotterb/project_data/bias_interpretability/Medical-Robust-Training/SVCE_adv_images_plots/'
     out_dir = os.path.join(base_out_dir, model_tag + '-' + checkpoint_tag)
+    if add_softmax:
+        out_dir += 'with-softmax'
+    if eps != 75:
+        out_dir += 'eps-{}'.format(eps)
     if not os.path.exists(out_dir):
         os.mkdir(out_dir)
 
@@ -128,15 +154,22 @@ if __name__ == '__main__':
         if not os.path.exists(label_out_dir):
             os.mkdir(label_out_dir)
         for f in tqdm.tqdm(files_to_predict[label]):
-            x = new_preprocess_image(f)
+            x = new_preprocess_image(f, convert_rgb=False)
 
-            adv_ims = {class_num: create_adv_im(res_wrapper, class_num, x) for class_num in [0, 1]}
+            adv_ims = {class_num: create_adv_im(res_wrapper, class_num, x, num_classes=n_classes, eps=eps) for class_num in range(n_classes)}
             with torch.no_grad():
-                orig_preds = torch.sigmoid(res_wrapper(x)).cpu().squeeze().numpy()
-                adv_preds = {class_num: torch.sigmoid(res_wrapper(adv_ims[class_num])).cpu().squeeze().numpy() for class_num in [0,1]}
+                if add_softmax:
+                    orig_preds = res_wrapper(x).cpu().squeeze().numpy()
+                    adv_preds = {class_num: res_wrapper(adv_ims[class_num]).cpu().squeeze().numpy() for
+                                 class_num in range(n_classes)}
+                else:
+                    orig_preds = torch.sigmoid(res_wrapper(x)).cpu().squeeze().numpy()
+                    adv_preds = {class_num: torch.sigmoid(res_wrapper(adv_ims[class_num])).cpu().squeeze().numpy() for class_num in range(n_classes)}
 
-            out_data.append([f, label, orig_preds[0], orig_preds[1], adv_preds[0][0], adv_preds[0][1],
-                             adv_preds[1][0], adv_preds[1][1]])
+            # out_data.append([f, label, orig_preds[0], orig_preds[1], adv_preds[0][0], adv_preds[0][1],
+            #                  adv_preds[1][0], adv_preds[1][1]])
+
+            out_data.append([f, label] + orig_preds.tolist() + adv_preds[0].tolist() + adv_preds[1].tolist()) # + adv_preds[2].tolist())
 
             orig_im = reformat_x(x)
             for class_num, im in adv_ims.items():
@@ -152,7 +185,11 @@ if __name__ == '__main__':
 
             count += 1
 
-    columns = ['file_path', 'label', 'orig_A_score', 'orig_B_score', 'advA_A_score', 'advA_B_score', 'advB_A_score', 'advB_B_score']
+    #columns = ['file_path', 'label', 'orig_A_score', 'orig_B_score', 'advA_A_score', 'advA_B_score', 'advB_A_score', 'advB_B_score']
+    columns = ['file_path', 'label']
+    for t in ['orig', 'adv0', 'adv1']: #, 'adv2']:
+        for v in range(n_classes):
+            columns += [t + '_' + str(v) + '_score']
     out_df = pd.DataFrame(out_data, columns=columns)
 
     out_df.to_csv(os.path.join(out_dir, 'adv_prediction_scores.csv'))

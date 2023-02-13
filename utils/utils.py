@@ -38,7 +38,10 @@ def numpy2cuda(array):
 
 def tensor2cuda(tensor):
     if torch.cuda.is_available():
-        tensor = tensor.cuda().float()
+        if tensor.shape[-1] == 1: # is labels, don't convert to float and squeeze
+            tensor = tensor.cuda().squeeze()
+        else:
+            tensor = tensor.cuda().float()
 
     return tensor
 
@@ -72,7 +75,10 @@ def evaluate_(_input, _target):
     results = []
     for n in range(_input.shape[-1]):
         input_vec = _input[:,n]
-        target_vec = _target[:,n]
+        if _target.ndim == 1:
+            target_vec = _target == n
+        else:
+            target_vec = _target[:,n]
         results.append(accuracy_score(target_vec, input_vec))
     return results
 

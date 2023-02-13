@@ -24,13 +24,14 @@ class Trainer():
         self.args = args
         self.logger = logger
         self.attack = attack
+        self.exclusive_labels = args.exclusive_labels
 
     def train(self, model, tr_loader, va_loader=None, adv_train=False):
         args = self.args
         logger = self.logger
         opt = torch.optim.Adam(model.parameters(), args.learning_rate, weight_decay=args.weight_decay)
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[10], gamma=0.1)
-        #scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[100, 200], gamma=0.1)
+        #scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[10], gamma=0.1)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[100, 200], gamma=0.1)
         # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min', min_lr=1e-6)
         _iter = 0
         begin_time = time()
@@ -49,8 +50,13 @@ class Trainer():
                     model.train()
                     output_ = model(adv_data, [1])
                     output = model(data, [0])
-                loss = F.binary_cross_entropy(torch.sigmoid(output), label)
-                loss_ = F.binary_cross_entropy(torch.sigmoid(output_), label)
+
+                if self.exclusive_labels:
+                    loss = F.cross_entropy(output, label)  # don't need to normalize logits
+                    loss_ = F.cross_entropy(output_, label)
+                else:
+                    loss = F.binary_cross_entropy(torch.sigmoid(output), label)
+                    loss_ = F.binary_cross_entropy(torch.sigmoid(output_), label)
                 loss_t = loss + loss_
                 opt.zero_grad()
                 loss_t.backward()
@@ -146,7 +152,10 @@ class Trainer():
                 data, label = tensor2cuda(data), tensor2cuda(label)
                 model.eval()
                 output = model(data, [0])
-                std_loss = F.binary_cross_entropy(torch.sigmoid(output), label)
+                if self.exclusive_labels:
+                    std_loss = F.cross_entropy(output, label)
+                else:
+                    std_loss = F.binary_cross_entropy(torch.sigmoid(output), label)
                 pred = torch.sigmoid(output)
                 out = (pred > t).float()
                 te_acc = np.mean(evaluate_(out.cpu().numpy(), label.cpu().numpy()))
@@ -166,7 +175,10 @@ class Trainer():
                                                        'mean', False, True)
                     model.eval()
                     adv_output = model(adv_data, [1])
-                    adv_loss = F.binary_cross_entropy(torch.sigmoid(adv_output), label)
+                    if self.exclusive_labels:
+                        adv_loss = F.cross_entropy(adv_output, label)
+                    else:
+                        adv_loss = F.binary_cross_entropy(torch.sigmoid(adv_output), label)
                     adv_pred = torch.sigmoid(adv_output)
                     if if_AUC:
                         predadv_list.append(adv_pred.cpu().numpy())
@@ -205,7 +217,10 @@ def main(args):
     print_args(args, logger)
 
     model = resnet50dsbn(pretrained=args.pretrain, widefactor=args.widefactor)
-    num_classes = 8 if args.label_type == 'path' else 2
+    if args.label_type == 'path':
+        num_classes = 8
+    else:
+        num_classes = int(args.label_type[-1])
     model.fc = nn.Linear(model.fc.in_features, num_classes)
 
     attack = FastGradientSignUntargeted(model, 
@@ -214,7 +229,8 @@ def main(args):
                                         min_val=0, 
                                         max_val=1, 
                                         max_iters=args.k, 
-                                        _type=args.perturbation_type)
+                                        _type=args.perturbation_type,
+                                        exclusive=args.exclusive_labels)
 
     if torch.cuda.is_available():
         # model = nn.DataParallel(model).cuda()
@@ -235,7 +251,7 @@ def main(args):
                 #tv.transforms.RandomAffine(25, translate=(0.2, 0.2),
                 #                            scale=(0.8,1.2),
                 #                            shear=10),
-                tv.transforms.RandomCrop(224),
+                tv.transforms.CenterCrop(224),
                 tv.transforms.ToTensor(),
                 #tv.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
@@ -243,7 +259,10 @@ def main(args):
                                         fold='train', 
                                         sample=args.subsample,
                                         transform=transform_train,
-                                        label_type=args.label_type)
+                                        label_type=args.label_type,
+                                        exclusive_labels=args.exclusive_labels,
+                                        equal_sampling=not args.no_equal_sampling,
+                                        filter_views=not args.no_filter_views)
         tr_loader = DataLoader(tr_dataset, batch_size=args.batch_size, shuffle=True, num_workers=12)
 
         # evaluation during training
@@ -256,7 +275,9 @@ def main(args):
         va_dataset = patd.PatchDataset(path_to_images=args.data_root,
                                         fold='valid',
                                         transform=transform_test,
-                                        label_type=args.label_type)
+                                        label_type=args.label_type,
+                                        exclusive_labels=args.exclusive_labels,
+                                        filter_views=not args.no_filter_views)
         te_loader = DataLoader(va_dataset, batch_size=args.batch_size, shuffle=False, num_workers=12)
              
         trainer.train(model, tr_loader, te_loader, args.adv_train)

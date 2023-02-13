@@ -250,7 +250,7 @@ class DSBNResNet(nn.Module):
         self.num_domains = num_domains
         self.num_classes = num_classes
         super(DSBNResNet, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
+        self.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3,
                                bias=False)
         self.bn1 = DomainSpecificBatchNorm2d(64, self.num_domains)
         self.relu = nn.ReLU(inplace=True)

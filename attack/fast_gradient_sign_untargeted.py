@@ -11,6 +11,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from utils import tensor2cuda
+import pdb
 
 def project(x, original_x, epsilon, _type='linf'):
     if _type == 'linf':
@@ -38,7 +39,7 @@ class FastGradientSignUntargeted():
         Fast gradient sign untargeted adversarial attack, minimizes the initial class activation
         with iterative grad sign updates
     """
-    def __init__(self, model, epsilon, alpha, min_val, max_val, max_iters, _type='linf'):
+    def __init__(self, model, epsilon, alpha, min_val, max_val, max_iters, _type='linf', exclusive=False):
         self.model = model
         # self.model.eval()
         # Maximum perturbation
@@ -53,10 +54,11 @@ class FastGradientSignUntargeted():
         self.max_iters = max_iters
         # The perturbation of epsilon
         self._type = _type
+        self.exclusive = exclusive
         
     def perturb(self, original_images, labels, 
                     reduction4loss='mean', random_start=False, 
-                    bns=False, exclusive=False):
+                    bns=False):
         # original_images: values are within self.min_val and self.max_val
 
         # The adversaries created from random close points to the original data
@@ -83,8 +85,8 @@ class FastGradientSignUntargeted():
                     outputs = self.model(x, [1])
                 else:
                     outputs = self.model(x)
-                
-                if exclusive:
+
+                if self.exclusive:
                     loss = F.cross_entropy(outputs, labels, reduction=reduction4loss)
                 else:
                     loss = F.binary_cross_entropy(torch.sigmoid(outputs), labels, reduction=reduction4loss)
